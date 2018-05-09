@@ -204,7 +204,7 @@ func hookHandler(w http.ResponseWriter, r *http.Request) {
 
 	// generate a request id for logging
 	newUid, _ := uuid.NewV4()
-	rid := string(newUid[:6])
+	rid := newUid.String()[:6]
 
 	log.Printf("[%s] incoming HTTP request from %s\n", rid, r.RemoteAddr)
 
@@ -324,17 +324,27 @@ func hookHandler(w http.ResponseWriter, r *http.Request) {
 
 func handleHook(h *hook.Hook, rid string, headers, query, payload *map[string]interface{}, body *[]byte) (string, error) {
 	var errors []error
+	var cmd *exec.Cmd
+	var args []string
 
-	cmdPath, err := getAndCheckCommandPath(h.ExecuteCommand)
+	cmdSet, err := getAndCheckCommandPath(h.ExecuteCommand)
 
 	if err != nil {
 		return "", err
 	}
 
-	cmd := exec.Command(cmdPath)
+	args, errors = h.ExtractCommandArguments(headers, query, payload)
+
+	if len(cmdSet) > 1 {
+		cmd = exec.Command(cmdSet[0], cmdSet[1:]...)
+		args = cmdSet
+	} else {
+		cmd = exec.Command(cmdSet[0])
+	}
+
+	cmd.Args = args
 	cmd.Dir = h.CommandWorkingDirectory
 
-	cmd.Args, errors = h.ExtractCommandArguments(headers, query, payload)
 	if errors != nil {
 		for _, err := range errors {
 			log.Printf("[%s] error extracting command arguments: %s\n", rid, err)
@@ -523,19 +533,30 @@ func valuesToMap(values map[string][]string) map[string]interface{} {
 	return ret
 }
 
-func getAndCheckCommandPath(command string) (string, error) {
-	var newCommand string
+func isSudo(command string) bool {
+	if command[:4] == sudoPrefix && command[4:5] == " " {
+		return true
+	}
 
-	if command[:4] == sudoPrefix {
-		newCommand = command[4:]
+	return false
+}
+
+func getAndCheckCommandPath(command string) ([]string, error) {
+	var newCommand string
+	var commandSet []string
+
+	if isSudo(command) {
+		newCommand = command[5:] // "sudo " will be striped
 
 		_, err := exec.LookPath(sudoPrefix)
 
 		if err != nil {
 			log.Printf(sudoPrefix + " command not found")
-			return "", err
+			return []string{}, err
 		}
 
+		// we need to defer to a bash script
+		commandSet = append(commandSet, "/bin/bash", "-c")
 	} else {
 		newCommand = command
 	}
@@ -552,8 +573,17 @@ func getAndCheckCommandPath(command string) (string, error) {
 			log.Printf("use 'pass-arguments-to-command' to specify args for '%s'", s)
 		}
 
-		return "", err
+		return []string{}, err
 	}
 
-	return sudoPrefix + " " + cmdPath, nil
+	if isSudo(command) {
+		commandSet = append(commandSet, sudoPrefix + " " + cmdPath)
+	} else {
+		commandSet = append(commandSet, cmdPath)
+	}
+
+
+	log.Println(commandSet)
+
+	return commandSet, nil
 }
