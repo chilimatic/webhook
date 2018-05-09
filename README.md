@@ -1,3 +1,10 @@
+# disclaimer reason
+this version has been hacked to support the "sudo" prefix in front of an executing command 
+
+reason -> every environment has a different user to avoid memory / file access -> the hook is running as a specific user that has no access to those environments. it's only allowed to run 1 command which needs sudo to execute another script as a specified user. 
+
+I didn't have the time to clean it up so this no pretty code and to make a real implemenentation I would have to make real behavioural assesements to ensure all cases would work -> no time otherwise I would open a pull request to give it back to the community and the creators if they would chose to accept it.
+
 # What is webhook?
 
  <img src="https://github.com/adnanh/webhook/raw/development/docs/logo/logo-128x128.png" alt="Webhook" align="left" />
